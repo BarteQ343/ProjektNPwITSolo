@@ -2,6 +2,10 @@ from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QLineEdit, QPushButto
 from PyQt5.QtCore import Qt
 import os
 import sys
+import json
+import yaml
+import xmltodict
+import threading
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -77,16 +81,15 @@ class Window(QMainWindow):
         self.button2.setMaximumWidth(max_width)
         self.button2.clicked.connect(self.openFolderDialog)
 
-        
         self.button3 = QPushButton("Konwertuj", widget)
         self.button3.setMaximumWidth(max_width)
         self.button3.clicked.connect(self.Convert)
 
-        self.small_label3 = QLabel("Placeholder", widget)
+        self.small_label3 = QLabel("", widget)
         self.small_label3.setAlignment(Qt.AlignCenter)
         self.small_label3.setStyleSheet("font-size: 16px; font-weight: bold; margin-right: 16px")
 
-        self.small_label4 = QLabel("Placeholder", widget)
+        self.small_label4 = QLabel("", widget)
         self.small_label4.setAlignment(Qt.AlignCenter)
         self.small_label4.setStyleSheet("font-size: 16px; font-weight: bold; margin-right: 16px")
 
@@ -130,21 +133,25 @@ class Window(QMainWindow):
 
         widget.setLayout(h_layout)
 
+        self.fileDir = ROOT_DIR
+
     def openFolderDialog(self):
         options = QFileDialog.Options()
         options |= QFileDialog.ShowDirsOnly
-        global fileDir
-        fileDir = ROOT_DIR
+        self.fileDir = ROOT_DIR
         fileDirTmp = QFileDialog.getExistingDirectory(self,"Wybierz miejsce zapisu", "", options=options)
         if fileDirTmp == "":
             fileDirLoc = "Obecnie wybrany katalog zapisu:\n"+ROOT_DIR
             self.small_label2.setText(fileDirLoc)
         else:
-            fileDir = fileDirTmp
-            fileDirLoc = "Obecnie wybrany katalog zapisu:\n"+fileDir
+            self.fileDir = fileDirTmp
+            fileDirLoc = "Obecnie wybrany katalog zapisu:\n"+self.fileDir
             self.small_label2.setText(fileDirLoc)
 
     def openFileDialog(self):
+        self.checkBoxXML.setChecked(False)
+        self.checkBoxJSON.setChecked(False)
+        self.checkBoxYML.setChecked(False)
         options = QFileDialog.Options()
         filter = "Config files (*.xml *.json *.yml *.yaml)"
         fileTmp = QFileDialog.getOpenFileName(self,"Wybierz plik do konwersji", "", filter, options=options)
@@ -156,12 +163,12 @@ class Window(QMainWindow):
             self.file = fileTmp
             fileLoc = "Obecnie wybrany plik:\n"+self.file
             self.small_label.setText(fileLoc)
-            fileExtention = self.file.split('.')[-1]
-            if fileExtention == 'xml':
+            self.fileExtension = self.file.split('.')[-1]
+            if self.fileExtension == 'xml':
                 self.checkBoxXML.setEnabled(False)
                 self.checkBoxJSON.setEnabled(True)
                 self.checkBoxYML.setEnabled(True)
-            elif fileExtention == 'json':
+            elif self.fileExtension == 'json':
                 self.checkBoxXML.setEnabled(True)
                 self.checkBoxJSON.setEnabled(False)
                 self.checkBoxYML.setEnabled(True)
@@ -171,30 +178,95 @@ class Window(QMainWindow):
                 self.checkBoxYML.setEnabled(False)
 
     def Convert(self):
+
+        def conv_to_xml():
+            outputFile = self.file.split('/')[-1]
+            outputPath = fileDir+'\\'+outputFile.split('.')[0]+'.xml'
+            if fileExtension == 'yml' or fileExtension == 'yaml':
+                xml_file = open(outputPath, "w")
+                xmltodict.unparse(data, output=xml_file, pretty=True)
+                xml_file.close()
+            elif fileExtension == 'json':
+                    xml_file = open(outputPath, "w")
+                    xmltodict.unparse(data, output=xml_file, pretty=True)
+                    xml_file.close()
+
+        def conv_to_yaml():
+            outputFile = self.file.split('/')[-1]
+            outputPath = fileDir+'\\'+outputFile.split('.')[0]+'.yaml'
+            if fileExtension == 'json':
+                with open(outputPath, 'w') as file:
+                    yaml.dump(data, file, indent=4)
+                    file.close()
+            elif fileExtension == 'xml':
+                yaml_data = yaml.dump(data, indent=4)
+                with open(outputPath, "w") as yaml_file:
+                    yaml_file.write(yaml_data)
+                    yaml_file.close()
+
+        def conv_to_json():
+            outputFile = self.file.split('/')[-1]
+            outputPath = fileDir+'\\'+outputFile.split('.')[0]+'.json'
+            if fileExtension == 'yml' or fileExtension == 'yaml':
+                    with open(outputPath, 'w') as file:
+                        json.dump(data, file, indent=4)
+                        file.close()
+            elif fileExtension == 'xml':
+                json_data = json.dumps(data, indent=4)
+                with open(outputPath, "w") as json_file:
+                    json_file.write(json_data)
+                    json_file.close()
+
         if hasattr(self, 'file'):
             file = self.file
+            fileExtension = self.fileExtension
+            fileDir = self.fileDir
             print(file)
             self.small_label3.setText("")
             self.small_label4.setText("")
+            if fileExtension == 'json':
+                with open(file, 'r') as file:
+                    try:
+                        data = json.load(file)
+                    except json.JSONDecodeError as e:
+                        self.small_label3.setText('Plik uszkodzony.', str(e))
+            if fileExtension == 'yaml' or fileExtension == 'yml':
+                with open(file, 'r') as file:
+                    try:
+                        data = yaml.safe_load(file)
+                    except yaml.YAMLError as e:
+                        self.small_label3.setText('Plik uszkodzony.', str(e))
+            if fileExtension == 'xml':
+                try:
+                    with open(file) as xml_file:
+                        data = xmltodict.parse(xml_file.read())
+                except xmltodict.ExpatError as e:
+                    self.small_label3.setText('Plik uszkodzony.', str(e))
             if self.checkBoxJSON.isChecked() == False and self.checkBoxXML.isChecked() == False and self.checkBoxYML.isChecked() == False:
                 self.small_label3.setText("Wybierz na co przekonwertować plik!")
             else:
                 if self.checkBoxXML.isChecked():
-                    self.small_label3.setText("XML_True")
+                    xmlTH = threading.Thread(target=conv_to_xml)
+                    xmlTH.start()
+                    self.small_label3.setText("Konwersja na plik XML ukończona")
                 else:
                     print("XML_False")
                 if self.checkBoxYML.isChecked():
-                    if self.small_label3.text() == "XML_True":
-                        self.small_label4.setText("YML_True")
+                    yamlTH = threading.Thread(target=conv_to_yaml)
+                    yamlTH.start()
+                    if self.small_label3.text() == "Konwersja na plik XML ukończona":
+                        self.small_label4.setText("Konwersja na plik YAML ukończona")
                     else:
-                        self.small_label3.setText("YML_True")
+                        self.small_label3.setText("Konwersja na plik YAML ukończona")
                 else:
                     print("YML_False")
                 if self.checkBoxJSON.isChecked():
+                    jsonTH = threading.Thread(target=conv_to_json)
+                    jsonTH.start()
                     if self.small_label3.text() == "":
-                        self.small_label3.setText("JSON_True")
+                        self.small_label3.setText("Konwersja na plik JSON ukończona")
                     else:
-                        self.small_label4.setText("JSON_True")
+                        self.small_label4.setText("Konwersja na plik JSON ukończona")
                 else:
                     print("JSON_False")
         else:
